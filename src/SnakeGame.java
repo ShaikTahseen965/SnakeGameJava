@@ -1,0 +1,281 @@
+import javax.swing.*;
+import java.awt.*;
+import java.awt.event.*;
+import java.awt.geom.AffineTransform;
+import java.util.Random;
+
+public class SnakeGame extends JPanel implements ActionListener, KeyListener {
+
+    private static final int TILE_SIZE = 25;
+    private static final int WIDTH = 30;  // 750 px wide
+    private static final int HEIGHT = 24; // 600 px high
+    private static final int DELAY = 80;  // Faster for smoother perception
+
+    private final int[] x = new int[WIDTH * HEIGHT];
+    private final int[] y = new int[WIDTH * HEIGHT];
+
+    private int snakeLength;
+    private int foodX;
+    private int foodY;
+
+    private char direction = 'R'; // U, D, L, R
+    private boolean running = false;
+    private Timer timer;
+    private Random random;
+
+    private int score;
+
+    // For subtle "head pop" animation scale effect
+    private float headScale = 1.0f;
+    private float headScaleSpeed = 0.05f;
+    private boolean scaleUp = true;
+
+    public SnakeGame() {
+        this.setPreferredSize(new Dimension(WIDTH * TILE_SIZE, HEIGHT * TILE_SIZE));
+        this.setBackground(Color.WHITE);
+        this.setFocusable(true);
+        this.addKeyListener(this);
+        random = new Random();
+        startGame();
+    }
+
+    public void startGame() {
+        snakeLength = 6;
+        for (int i = 0; i < snakeLength; i++) {
+            x[i] = 5 - i;
+            y[i] = 5;
+        }
+        placeFood();
+        direction = 'R';
+        score = 0;
+        running = true;
+        timer = new Timer(DELAY, this);
+        timer.start();
+        headScale = 1.0f;
+        scaleUp = true;
+    }
+
+    public void placeFood() {
+        boolean onSnake;
+        do {
+            onSnake = false;
+            foodX = random.nextInt(WIDTH);
+            foodY = random.nextInt(HEIGHT);
+            for (int i = 0; i < snakeLength; i++) {
+                if (x[i] == foodX && y[i] == foodY) {
+                    onSnake = true;
+                    break;
+                }
+            }
+        } while (onSnake);
+    }
+
+    @Override
+    public void paintComponent(Graphics g) {
+        super.paintComponent(g);
+        draw(g);
+    }
+
+    public void draw(Graphics g) {
+        Graphics2D g2d = (Graphics2D) g.create();
+
+        if (running) {
+            // Enable anti-aliasing for smooth shapes
+            g2d.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
+
+            // Draw food with subtle shadow
+            g2d.setColor(new Color(231, 76, 60)); // Slightly softer red
+            g2d.fillOval(foodX * TILE_SIZE + 3, foodY * TILE_SIZE + 3, TILE_SIZE - 6, TILE_SIZE - 6);
+            g2d.setColor(new Color(192, 57, 43));
+            g2d.drawOval(foodX * TILE_SIZE + 3, foodY * TILE_SIZE + 3, TILE_SIZE - 6, TILE_SIZE - 6);
+
+            // Draw snake - body first
+            for (int i = snakeLength - 1; i > 0; i--) {
+                int px = x[i] * TILE_SIZE;
+                int py = y[i] * TILE_SIZE;
+
+                // Gradient green for body: blend limegreen to forestgreen vertically
+                GradientPaint gradient = new GradientPaint(
+                        px, py, new Color(50, 205, 50),
+                        px, py + TILE_SIZE, new Color(34, 139, 34));
+                g2d.setPaint(gradient);
+
+                g2d.fillRoundRect(px + 2, py + 2, TILE_SIZE - 4, TILE_SIZE - 4, 12, 12);
+                g2d.setColor(new Color(26, 115, 13, 150));
+                g2d.drawRoundRect(px + 2, py + 2, TILE_SIZE - 4, TILE_SIZE - 4, 12, 12);
+            }
+
+            // Draw snake head with a scale "pop" animation
+            int headX = x[0] * TILE_SIZE;
+            int headY = y[0] * TILE_SIZE;
+
+            g2d.translate(headX + TILE_SIZE / 2, headY + TILE_SIZE / 2);
+            g2d.scale(headScale, headScale);
+            g2d.translate(-(headX + TILE_SIZE / 2), -(headY + TILE_SIZE / 2));
+
+            GradientPaint headGradient = new GradientPaint(
+                    headX, headY, new Color(46, 204, 113),
+                    headX, headY + TILE_SIZE, new Color(39, 174, 96));
+            g2d.setPaint(headGradient);
+            g2d.fillRoundRect(headX + 1, headY + 1, TILE_SIZE - 2, TILE_SIZE - 2, 16, 16);
+
+            g2d.setColor(new Color(24, 136, 70));
+            g2d.setStroke(new BasicStroke(2));
+            g2d.drawRoundRect(headX + 1, headY + 1, TILE_SIZE - 2, TILE_SIZE - 2, 16, 16);
+
+            // Reset transform after head drawing
+            g2d.setTransform(new AffineTransform());
+
+            // Draw score with bold, elegant typography
+            String scoreText = "Score: " + score;
+            g2d.setFont(new Font("Segoe UI", Font.BOLD, 22));
+            FontMetrics metrics = getFontMetrics(g2d.getFont());
+            g2d.setColor(new Color(75, 85, 99)); // Neutral gray (#4B5563 approx)
+            g2d.drawString(scoreText, (WIDTH * TILE_SIZE - metrics.stringWidth(scoreText)) / 2, 30);
+
+            g2d.dispose();
+        } else {
+            gameOver(g2d);
+        }
+    }
+
+    public void move() {
+        for (int i = snakeLength; i > 0; i--) {
+            x[i] = x[i - 1];
+            y[i] = y[i - 1];
+        }
+
+        switch (direction) {
+            case 'U':
+                y[0]--;
+                break;
+            case 'D':
+                y[0]++;
+                break;
+            case 'L':
+                x[0]--;
+                break;
+            case 'R':
+                x[0]++;
+                break;
+        }
+        // Animate head scale by toggling scale up/down
+        if (scaleUp) {
+            headScale += headScaleSpeed;
+            if (headScale >= 1.1f) {
+                scaleUp = false;
+            }
+        } else {
+            headScale -= headScaleSpeed;
+            if (headScale <= 1.0f) {
+                scaleUp = true;
+            }
+        }
+    }
+
+    public void checkFood() {
+        if (x[0] == foodX && y[0] == foodY) {
+            snakeLength++;
+            score++;
+            placeFood();
+        }
+    }
+
+    public void checkCollisions() {
+        // Check collision with body
+        for (int i = snakeLength; i > 0; i--) {
+            if (x[0] == x[i] && y[0] == y[i]) {
+                running = false;
+                break;
+            }
+        }
+
+        // Check collision with walls
+        if (x[0] < 0 || x[0] >= WIDTH || y[0] < 0 || y[0] >= HEIGHT) {
+            running = false;
+        }
+
+        if (!running) {
+            timer.stop();
+        }
+    }
+
+    public void gameOver(Graphics g) {
+        Graphics2D g2d = (Graphics2D) g.create();
+
+        String message = "Game Over";
+        String scoreMessage = "Your score: " + score;
+        String restartMessage = "Press ENTER to Restart";
+
+        // Background overlay
+        g2d.setColor(new Color(255, 255, 255, 200));
+        g2d.fillRect(0, 0, WIDTH * TILE_SIZE, HEIGHT * TILE_SIZE);
+
+        // Draw messages with elegant font and neutral grays
+        g2d.setColor(new Color(31, 41, 55)); // Darker gray
+        g2d.setFont(new Font("Segoe UI", Font.BOLD, 48));
+        FontMetrics metrics1 = getFontMetrics(g2d.getFont());
+        g2d.drawString(message, (WIDTH * TILE_SIZE - metrics1.stringWidth(message)) / 2, HEIGHT * TILE_SIZE / 3);
+
+        g2d.setFont(new Font("Segoe UI", Font.PLAIN, 26));
+        FontMetrics metrics2 = getFontMetrics(g2d.getFont());
+        g2d.drawString(scoreMessage, (WIDTH * TILE_SIZE - metrics2.stringWidth(scoreMessage)) / 2, HEIGHT * TILE_SIZE / 3 + 60);
+
+        g2d.setFont(new Font("Segoe UI", Font.PLAIN, 20));
+        FontMetrics metrics3 = getFontMetrics(g2d.getFont());
+        g2d.drawString(restartMessage, (WIDTH * TILE_SIZE - metrics3.stringWidth(restartMessage)) / 2, HEIGHT * TILE_SIZE / 3 + 100);
+
+        g2d.dispose();
+    }
+
+    @Override
+    public void actionPerformed(ActionEvent e) {
+        if (running) {
+            move();
+            checkFood();
+            checkCollisions();
+        }
+        repaint();
+    }
+
+    @Override
+    public void keyPressed(KeyEvent e) {
+        int key = e.getKeyCode();
+
+        if (key == KeyEvent.VK_LEFT && direction != 'R') {
+            direction = 'L';
+        } else if (key == KeyEvent.VK_RIGHT && direction != 'L') {
+            direction = 'R';
+        } else if (key == KeyEvent.VK_UP && direction != 'D') {
+            direction = 'U';
+        } else if (key == KeyEvent.VK_DOWN && direction != 'U') {
+            direction = 'D';
+        } else if (!running && key == KeyEvent.VK_ENTER) {
+            startGame();
+        }
+    }
+
+    @Override
+    public void keyReleased(KeyEvent e) {
+        // Not used
+    }
+
+    @Override
+    public void keyTyped(KeyEvent e) {
+        // Not used
+    }
+
+    public static void main(String[] args) {
+        JFrame frame = new JFrame("Java Snake Game");
+        SnakeGame gamePanel = new SnakeGame();
+
+        frame.add(gamePanel);
+        frame.setDefaultCloseOperation(JFrame.EXIT_ON_CLOSE);
+        frame.setResizable(false);
+        frame.pack();
+        frame.setLocationRelativeTo(null);
+        frame.setVisible(true);
+    }
+}
+
+
